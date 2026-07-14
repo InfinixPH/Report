@@ -3,12 +3,19 @@ let state = { categories: [], links: [] };
 let editingLinkId = null;
 let editingCategoryId = null;
 let pendingDeleteAction = null;
+let role = sessionStorage.getItem('reportLinksRole') === 'admin' ? 'admin' : 'view';
+
+const CATEGORY_COLORS = ['#4f46e5', '#0ea5e9', '#f59e0b', '#ec4899', '#10b981', '#8b5cf6'];
 
 // ---------- DOM ----------
 const categoriesContainer = document.getElementById('categoriesContainer');
 const loadingState = document.getElementById('loadingState');
 const errorState = document.getElementById('errorState');
+const emptyState = document.getElementById('emptyState');
 const lastUpdatedEl = document.getElementById('lastUpdated');
+
+const roleToggleBtn = document.getElementById('roleToggleBtn');
+const roleLabel = document.getElementById('roleLabel');
 
 const linkModal = document.getElementById('linkModal');
 const linkForm = document.getElementById('linkForm');
@@ -16,7 +23,15 @@ const linkModalTitle = document.getElementById('linkModalTitle');
 const linkTitleInput = document.getElementById('linkTitleInput');
 const linkUrlInput = document.getElementById('linkUrlInput');
 const linkCategorySelect = document.getElementById('linkCategorySelect');
-const linkStatusInput = document.getElementById('linkStatusInput');
+const linkStatusSelect = document.getElementById('linkStatusSelect');
+const linkStatusOtherInput = document.getElementById('linkStatusOtherInput');
+
+const PRESET_STATUSES = ['Active', 'Upcoming', 'Complete', 'Pending'];
+
+linkStatusSelect.addEventListener('change', () => {
+  linkStatusOtherInput.classList.toggle('hidden', linkStatusSelect.value !== 'Other');
+  if (linkStatusSelect.value === 'Other') linkStatusOtherInput.focus();
+});
 
 const categoryModal = document.getElementById('categoryModal');
 const categoryForm = document.getElementById('categoryForm');
@@ -25,6 +40,12 @@ const categoryNameInput = document.getElementById('categoryNameInput');
 
 const confirmModal = document.getElementById('confirmModal');
 const confirmMessage = document.getElementById('confirmMessage');
+
+const pinModal = document.getElementById('pinModal');
+const pinForm = document.getElementById('pinForm');
+const pinInput = document.getElementById('pinInput');
+const pinError = document.getElementById('pinError');
+const pinCancelBtn = document.getElementById('pinCancelBtn');
 
 // ---------- Init ----------
 document.getElementById('addCategoryBtn').addEventListener('click', () => openCategoryModal());
@@ -38,7 +59,54 @@ document.getElementById('confirmOkBtn').addEventListener('click', () => {
 linkForm.addEventListener('submit', handleLinkFormSubmit);
 categoryForm.addEventListener('submit', handleCategoryFormSubmit);
 
+roleToggleBtn.addEventListener('click', handleRoleToggleClick);
+pinForm.addEventListener('submit', handlePinSubmit);
+pinCancelBtn.addEventListener('click', closePinModal);
+
+applyRoleUI();
 loadData();
+
+// ---------- Role handling ----------
+function applyRoleUI() {
+  const isAdmin = role === 'admin';
+  roleLabel.textContent = isAdmin ? 'Admin' : 'Viewer';
+  roleToggleBtn.classList.toggle('role-admin', isAdmin);
+  roleToggleBtn.classList.toggle('role-view', !isAdmin);
+  document.querySelectorAll('.admin-only').forEach(el => el.classList.toggle('hidden', !isAdmin));
+}
+
+function handleRoleToggleClick() {
+  if (role === 'admin') {
+    role = 'view';
+    sessionStorage.setItem('reportLinksRole', 'view');
+    applyRoleUI();
+    render();
+  } else {
+    pinInput.value = '';
+    pinError.classList.add('hidden');
+    pinModal.classList.remove('hidden');
+    pinInput.focus();
+  }
+}
+
+function handlePinSubmit(e) {
+  e.preventDefault();
+  if (pinInput.value === ADMIN_PIN) {
+    role = 'admin';
+    sessionStorage.setItem('reportLinksRole', 'admin');
+    closePinModal();
+    applyRoleUI();
+    render();
+  } else {
+    pinError.classList.remove('hidden');
+    pinInput.value = '';
+    pinInput.focus();
+  }
+}
+
+function closePinModal() {
+  pinModal.classList.add('hidden');
+}
 
 // ---------- API ----------
 async function apiGet() {
@@ -62,6 +130,7 @@ async function apiPost(action, payload) {
 async function loadData() {
   loadingState.classList.remove('hidden');
   errorState.classList.add('hidden');
+  emptyState.classList.add('hidden');
   categoriesContainer.innerHTML = '';
   try {
     state = await apiGet();
@@ -80,11 +149,13 @@ function render() {
   categoriesContainer.innerHTML = '';
 
   if (state.categories.length === 0) {
-    categoriesContainer.innerHTML = '<div class="state-msg">No categories yet. Click "+ Add Category" to get started.</div>';
+    emptyState.classList.remove('hidden');
     return;
   }
+  emptyState.classList.add('hidden');
 
-  state.categories.forEach(cat => {
+  state.categories.forEach((cat, index) => {
+    const color = CATEGORY_COLORS[index % CATEGORY_COLORS.length];
     const links = state.links.filter(l => l.categoryId === cat.id);
 
     const section = document.createElement('section');
@@ -92,8 +163,12 @@ function render() {
 
     section.innerHTML = `
       <div class="category-header">
-        <div class="category-title">${escapeHtml(cat.name)} <span class="count">${links.length}</span></div>
-        <div class="category-header-actions">
+        <div class="category-title-wrap">
+          <div class="category-swatch" style="background:${color}"></div>
+          <div class="category-title">${escapeHtml(cat.name)}</div>
+          <div class="category-count">${links.length}</div>
+        </div>
+        <div class="category-header-actions admin-only ${role === 'admin' ? '' : 'hidden'}">
           <button class="icon-btn add-link-btn" data-cat="${cat.id}">+ Add Link</button>
           <button class="icon-btn rename-cat-btn" data-cat="${cat.id}">Rename</button>
           <button class="icon-btn danger delete-cat-btn" data-cat="${cat.id}">Delete</button>
@@ -112,7 +187,6 @@ function render() {
     }
   });
 
-  // wire up category action buttons
   document.querySelectorAll('.add-link-btn').forEach(btn =>
     btn.addEventListener('click', () => openLinkModal(null, btn.dataset.cat)));
   document.querySelectorAll('.rename-cat-btn').forEach(btn =>
@@ -127,7 +201,14 @@ function renderLinkCard(link) {
 
   const statusClass = statusClassFor(link.status);
   const statusHtml = link.status
-    ? `<span class="link-status ${statusClass}">${escapeHtml(link.status)}</span>`
+    ? `<span class="link-status ${statusClass}"><span class="dot"></span>${escapeHtml(link.status)}</span>`
+    : '';
+
+  const adminActions = role === 'admin'
+    ? `<div class="link-card-admin-actions">
+         <button class="icon-btn edit-link-btn" data-id="${link.id}">Edit</button>
+         <button class="icon-btn danger delete-link-btn" data-id="${link.id}">Delete</button>
+       </div>`
     : '';
 
   card.innerHTML = `
@@ -135,15 +216,14 @@ function renderLinkCard(link) {
     ${statusHtml}
     <div class="link-card-footer">
       <a class="btn btn-primary btn-small btn-open" href="${escapeAttr(link.url)}" target="_blank" rel="noopener noreferrer">Open ↗</a>
-      <div>
-        <button class="icon-btn edit-link-btn" data-id="${link.id}">Edit</button>
-        <button class="icon-btn danger delete-link-btn" data-id="${link.id}">Delete</button>
-      </div>
+      ${adminActions}
     </div>
   `;
 
-  card.querySelector('.edit-link-btn').addEventListener('click', () => openLinkModal(link.id));
-  card.querySelector('.delete-link-btn').addEventListener('click', () => confirmDeleteLink(link.id, link.title));
+  if (role === 'admin') {
+    card.querySelector('.edit-link-btn').addEventListener('click', () => openLinkModal(link.id));
+    card.querySelector('.delete-link-btn').addEventListener('click', () => confirmDeleteLink(link.id, link.title));
+  }
 
   return card;
 }
@@ -152,12 +232,16 @@ function statusClassFor(status) {
   if (!status) return 'neutral';
   const s = status.toLowerCase();
   if (s.includes('pending')) return 'pending';
+  if (s.includes('active')) return 'active';
+  if (s.includes('upcoming')) return 'upcoming';
+  if (s.includes('complete')) return 'complete';
   if (s.includes('update')) return 'update';
   return 'neutral';
 }
 
 // ---------- Link Modal ----------
 function openLinkModal(linkId, defaultCategoryId) {
+  if (role !== 'admin') return;
   editingLinkId = linkId;
   linkForm.reset();
 
@@ -165,15 +249,29 @@ function openLinkModal(linkId, defaultCategoryId) {
     .map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`)
     .join('');
 
+  linkStatusOtherInput.classList.add('hidden');
+  linkStatusOtherInput.value = '';
+
   if (linkId) {
     const link = state.links.find(l => l.id === linkId);
     linkModalTitle.textContent = 'Edit Link';
     linkTitleInput.value = link.title;
     linkUrlInput.value = link.url;
-    linkStatusInput.value = link.status || '';
     linkCategorySelect.value = link.categoryId;
+
+    const status = link.status || '';
+    if (!status) {
+      linkStatusSelect.value = '';
+    } else if (PRESET_STATUSES.includes(status)) {
+      linkStatusSelect.value = status;
+    } else {
+      linkStatusSelect.value = 'Other';
+      linkStatusOtherInput.value = status;
+      linkStatusOtherInput.classList.remove('hidden');
+    }
   } else {
     linkModalTitle.textContent = 'Add Link';
+    linkStatusSelect.value = '';
     if (defaultCategoryId) linkCategorySelect.value = defaultCategoryId;
   }
 
@@ -187,11 +285,16 @@ function closeLinkModal() {
 
 async function handleLinkFormSubmit(e) {
   e.preventDefault();
+  if (role !== 'admin') return;
+  const finalStatus = linkStatusSelect.value === 'Other'
+    ? linkStatusOtherInput.value.trim()
+    : linkStatusSelect.value;
+
   const payload = {
     title: linkTitleInput.value.trim(),
     url: linkUrlInput.value.trim(),
     categoryId: linkCategorySelect.value,
-    status: linkStatusInput.value.trim()
+    status: finalStatus
   };
 
   try {
@@ -208,6 +311,7 @@ async function handleLinkFormSubmit(e) {
 }
 
 function confirmDeleteLink(id, title) {
+  if (role !== 'admin') return;
   confirmMessage.textContent = `Delete the link "${title}"? This cannot be undone.`;
   pendingDeleteAction = async () => {
     try {
@@ -222,6 +326,7 @@ function confirmDeleteLink(id, title) {
 
 // ---------- Category Modal ----------
 function openCategoryModal(categoryId) {
+  if (role !== 'admin') return;
   editingCategoryId = categoryId || null;
   categoryForm.reset();
 
@@ -243,6 +348,7 @@ function closeCategoryModal() {
 
 async function handleCategoryFormSubmit(e) {
   e.preventDefault();
+  if (role !== 'admin') return;
   const name = categoryNameInput.value.trim();
 
   try {
@@ -259,6 +365,7 @@ async function handleCategoryFormSubmit(e) {
 }
 
 function confirmDeleteCategory(id) {
+  if (role !== 'admin') return;
   const cat = state.categories.find(c => c.id === id);
   const linkCount = state.links.filter(l => l.categoryId === id).length;
   confirmMessage.textContent = linkCount > 0
