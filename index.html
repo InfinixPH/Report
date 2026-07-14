@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Report Links</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <h1>📊 Report Links</h1>
+      <div class="topbar-actions">
+        <span id="lastUpdated" class="last-updated"></span>
+        <button id="addCategoryBtn" class="btn btn-primary">+ Add Category</button>
+      </div>
+    </div>
+  </header>
+
+  <main id="app">
+    <div id="loadingState" class="state-msg">Loading…</div>
+    <div id="errorState" class="state-msg error hidden"></div>
+    <div id="categoriesContainer" class="categories-container"></div>
+  </main>
+
+  <!-- Add / Edit Link Modal -->
+  <div id="linkModal" class="modal-backdrop hidden">
+    <div class="modal">
+      <h2 id="linkModalTitle">Add Link</h2>
+      <form id="linkForm">
+        <label>Title</label>
+        <input type="text" id="linkTitleInput" placeholder="e.g. LDU Monitoring - July" required />
+
+        <label>Google Sheet URL</label>
+        <input type="url" id="linkUrlInput" placeholder="https://docs.google.com/spreadsheets/..." required />
+
+        <label>Category</label>
+        <select id="linkCategorySelect" required></select>
+
+        <label>Status <span class="optional">(optional)</span></label>
+        <input type="text" id="linkStatusInput" placeholder="e.g. Pending, Update July 14" />
+
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" id="linkCancelBtn">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Add / Rename Category Modal -->
+  <div id="categoryModal" class="modal-backdrop hidden">
+    <div class="modal">
+      <h2 id="categoryModalTitle">Add Category</h2>
+      <form id="categoryForm">
+        <label>Category Name</label>
+        <input type="text" id="categoryNameInput" placeholder="e.g. BTL Team" required />
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" id="categoryCancelBtn">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Confirm Delete Modal -->
+  <div id="confirmModal" class="modal-backdrop hidden">
+    <div class="modal">
+      <h2 id="confirmTitle">Are you sure?</h2>
+      <p id="confirmMessage" class="confirm-message"></p>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" id="confirmCancelBtn">Cancel</button>
+        <button type="button" class="btn btn-danger" id="confirmOkBtn">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
