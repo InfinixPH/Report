@@ -4,23 +4,45 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Report Links</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="style.css" />
 </head>
 <body>
 
   <header class="topbar">
     <div class="topbar-inner">
-      <h1>📊 Report Links</h1>
+      <div class="brand">
+        <div class="brand-mark">R</div>
+        <div>
+          <h1>Report Links</h1>
+          <p class="brand-sub">Data &amp; report link directory</p>
+        </div>
+      </div>
+
       <div class="topbar-actions">
         <span id="lastUpdated" class="last-updated"></span>
-        <button id="addCategoryBtn" class="btn btn-primary">+ Add Category</button>
+
+        <button id="roleToggleBtn" class="role-badge role-view">
+          <span class="role-dot"></span>
+          <span id="roleLabel">Viewer</span>
+        </button>
+
+        <button id="addCategoryBtn" class="btn btn-primary admin-only hidden">
+          <span class="btn-icon">+</span> Add Category
+        </button>
       </div>
     </div>
   </header>
 
   <main id="app">
-    <div id="loadingState" class="state-msg">Loading…</div>
+    <div id="loadingState" class="state-msg">
+      <div class="spinner"></div>
+      <span>Loading your links…</span>
+    </div>
     <div id="errorState" class="state-msg error hidden"></div>
+    <div id="emptyState" class="state-msg hidden">No categories yet.</div>
     <div id="categoriesContainer" class="categories-container"></div>
   </main>
 
@@ -39,7 +61,15 @@
         <select id="linkCategorySelect" required></select>
 
         <label>Status <span class="optional">(optional)</span></label>
-        <input type="text" id="linkStatusInput" placeholder="e.g. Pending, Update July 14" />
+        <select id="linkStatusSelect">
+          <option value="">No status</option>
+          <option value="Active">Active</option>
+          <option value="Upcoming">Upcoming</option>
+          <option value="Complete">Complete</option>
+          <option value="Pending">Pending</option>
+          <option value="Other">Other…</option>
+        </select>
+        <input type="text" id="linkStatusOtherInput" class="hidden" placeholder="Type a custom status" style="margin-top:8px;" />
 
         <div class="modal-actions">
           <button type="button" class="btn btn-secondary" id="linkCancelBtn">Cancel</button>
@@ -73,6 +103,22 @@
         <button type="button" class="btn btn-secondary" id="confirmCancelBtn">Cancel</button>
         <button type="button" class="btn btn-danger" id="confirmOkBtn">Delete</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Admin PIN Modal -->
+  <div id="pinModal" class="modal-backdrop hidden">
+    <div class="modal">
+      <h2>Enter Admin PIN</h2>
+      <form id="pinForm">
+        <label>PIN</label>
+        <input type="password" id="pinInput" placeholder="••••" inputmode="numeric" required />
+        <p id="pinError" class="pin-error hidden">Incorrect PIN. Try again.</p>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" id="pinCancelBtn">Cancel</button>
+          <button type="submit" class="btn btn-primary">Unlock</button>
+        </div>
+      </form>
     </div>
   </div>
 
