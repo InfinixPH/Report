@@ -5,7 +5,7 @@ let editingCategoryId = null;
 let pendingDeleteAction = null;
 let role = sessionStorage.getItem('reportLinksRole') === 'admin' ? 'admin' : 'view';
 
-const CATEGORY_COLORS = ['#4f46e5', '#0ea5e9', '#f59e0b', '#ec4899', '#10b981', '#8b5cf6'];
+const CATEGORY_COLORS = ['#0F9E97', '#E8A23D', '#4C5FD5', '#D2577A', '#3F9142', '#6B7385'];
 
 // ---------- DOM ----------
 const categoriesContainer = document.getElementById('categoriesContainer');
@@ -137,7 +137,7 @@ async function loadData() {
     render();
     lastUpdatedEl.textContent = 'Updated ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   } catch (err) {
-    errorState.textContent = 'Could not load data. Check that API_URL in config.js is set correctly. (' + err.message + ')';
+    errorState.textContent = 'Sync failed — check that API_URL in config.js is set correctly. (' + err.message + ')';
     errorState.classList.remove('hidden');
   } finally {
     loadingState.classList.add('hidden');
@@ -181,9 +181,9 @@ function render() {
 
     const grid = section.querySelector(`#grid-${CSS.escape(cat.id)}`);
     if (links.length === 0) {
-      grid.innerHTML = '<div class="empty-category">No links yet in this category.</div>';
+      grid.innerHTML = '<div class="empty-category">No links logged in this category.</div>';
     } else {
-      links.forEach(link => grid.appendChild(renderLinkCard(link)));
+      links.forEach(link => grid.appendChild(renderLinkCard(link, color)));
     }
   });
 
@@ -195,13 +195,18 @@ function render() {
     btn.addEventListener('click', () => confirmDeleteCategory(btn.dataset.cat)));
 }
 
-function renderLinkCard(link) {
+function renderLinkCard(link, color) {
   const card = document.createElement('div');
   card.className = 'link-card';
+  if (color) card.style.setProperty('--card-accent', color);
 
   const statusClass = statusClassFor(link.status);
   const statusHtml = link.status
     ? `<span class="link-status ${statusClass}"><span class="dot"></span>${escapeHtml(link.status)}</span>`
+    : '';
+
+  const dateHtml = link.dateAdded
+    ? `<div class="link-meta">Added ${formatDate(link.dateAdded)}</div>`
     : '';
 
   const adminActions = role === 'admin'
@@ -214,8 +219,9 @@ function renderLinkCard(link) {
   card.innerHTML = `
     <div class="link-title">${escapeHtml(link.title)}</div>
     ${statusHtml}
+    ${dateHtml}
     <div class="link-card-footer">
-      <a class="btn btn-primary btn-small btn-open" href="${escapeAttr(link.url)}" target="_blank" rel="noopener noreferrer">Open ↗</a>
+      <a class="btn btn-small btn-open" href="${escapeAttr(link.url)}" target="_blank" rel="noopener noreferrer">Open ↗</a>
       ${adminActions}
     </div>
   `;
@@ -397,4 +403,10 @@ function escapeHtml(str) {
 
 function escapeAttr(str) {
   return escapeHtml(str);
+}
+
+function formatDate(value) {
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' });
 }
