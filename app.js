@@ -5,23 +5,42 @@ let editingCategoryId = null;
 let pendingDeleteAction = null;
 let role = sessionStorage.getItem('reportLinksRole') === 'admin' ? 'admin' : 'view';
 
+let searchQuery = '';
+let selectMode = false;
+let selectedLinkIds = new Set();
+let collapsedCategories = new Set(loadCollapsedFromStorage());
+
 const CATEGORY_COLORS = ['#0F9E97', '#E8A23D', '#4C5FD5', '#D2577A', '#3F9142', '#6B7385'];
+const GOOGLE_SHEETS_PATTERN = /^https:\/\/docs\.google\.com\/spreadsheets\//i;
 
 // ---------- DOM ----------
 const categoriesContainer = document.getElementById('categoriesContainer');
 const loadingState = document.getElementById('loadingState');
 const errorState = document.getElementById('errorState');
 const emptyState = document.getElementById('emptyState');
+const noResultsState = document.getElementById('noResultsState');
 const lastUpdatedEl = document.getElementById('lastUpdated');
 
 const roleToggleBtn = document.getElementById('roleToggleBtn');
 const roleLabel = document.getElementById('roleLabel');
+
+const searchInput = document.getElementById('searchInput');
+const searchClearBtn = document.getElementById('searchClearBtn');
+const selectModeBtn = document.getElementById('selectModeBtn');
+
+const bulkToolbar = document.getElementById('bulkToolbar');
+const bulkCount = document.getElementById('bulkCount');
+const bulkMoveSelect = document.getElementById('bulkMoveSelect');
+const bulkMoveBtn = document.getElementById('bulkMoveBtn');
+const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
+const bulkCancelBtn = document.getElementById('bulkCancelBtn');
 
 const linkModal = document.getElementById('linkModal');
 const linkForm = document.getElementById('linkForm');
 const linkModalTitle = document.getElementById('linkModalTitle');
 const linkTitleInput = document.getElementById('linkTitleInput');
 const linkUrlInput = document.getElementById('linkUrlInput');
+const urlWarning = document.getElementById('urlWarning');
 const linkCategorySelect = document.getElementById('linkCategorySelect');
 const linkStatusSelect = document.getElementById('linkStatusSelect');
 const linkStatusOtherInput = document.getElementById('linkStatusOtherInput');
@@ -32,6 +51,8 @@ linkStatusSelect.addEventListener('change', () => {
   linkStatusOtherInput.classList.toggle('hidden', linkStatusSelect.value !== 'Other');
   if (linkStatusSelect.value === 'Other') linkStatusOtherInput.focus();
 });
+
+linkUrlInput.addEventListener('input', () => updateUrlWarning());
 
 const categoryModal = document.getElementById('categoryModal');
 const categoryForm = document.getElementById('categoryForm');
@@ -63,6 +84,32 @@ roleToggleBtn.addEventListener('click', handleRoleToggleClick);
 pinForm.addEventListener('submit', handlePinSubmit);
 pinCancelBtn.addEventListener('click', closePinModal);
 
+searchInput.addEventListener('input', () => {
+  searchQuery = searchInput.value.trim().toLowerCase();
+  searchClearBtn.classList.toggle('hidden', searchQuery === '');
+  render();
+});
+searchClearBtn.addEventListener('click', () => {
+  searchInput.value = '';
+  searchQuery = '';
+  searchClearBtn.classList.add('hidden');
+  searchInput.focus();
+  render();
+});
+
+selectModeBtn.addEventListener('click', () => {
+  selectMode = !selectMode;
+  selectedLinkIds.clear();
+  render();
+});
+bulkCancelBtn.addEventListener('click', () => {
+  selectMode = false;
+  selectedLinkIds.clear();
+  render();
+});
+bulkMoveBtn.addEventListener('click', handleBulkMove);
+bulkDeleteBtn.addEventListener('click', handleBulkDelete);
+
 applyRoleUI();
 loadData();
 
@@ -73,6 +120,10 @@ function applyRoleUI() {
   roleToggleBtn.classList.toggle('role-admin', isAdmin);
   roleToggleBtn.classList.toggle('role-view', !isAdmin);
   document.querySelectorAll('.admin-only').forEach(el => el.classList.toggle('hidden', !isAdmin));
+  if (!isAdmin) {
+    selectMode = false;
+    selectedLinkIds.clear();
+  }
 }
 
 function handleRoleToggleClick() {
@@ -131,6 +182,7 @@ async function loadData() {
   loadingState.classList.remove('hidden');
   errorState.classList.add('hidden');
   emptyState.classList.add('hidden');
+  noResultsState.classList.add('hidden');
   categoriesContainer.innerHTML = '';
   try {
     state = await apiGet();
@@ -147,6 +199,12 @@ async function loadData() {
 // ---------- Render ----------
 function render() {
   categoriesContainer.innerHTML = '';
+  noResultsState.classList.add('hidden');
+
+  selectModeBtn.classList.toggle('active', selectMode);
+  selectModeBtn.textContent = selectMode ? 'Done' : 'Select';
+  bulkToolbar.classList.toggle('hidden', !selectMode);
+  updateBulkToolbar();
 
   if (state.categories.length === 0) {
     emptyState.classList.remove('hidden');
@@ -154,21 +212,40 @@ function render() {
   }
   emptyState.classList.add('hidden');
 
+  let anyRendered = false;
+
   state.categories.forEach((cat, index) => {
     const color = CATEGORY_COLORS[index % CATEGORY_COLORS.length];
-    const links = state.links.filter(l => l.categoryId === cat.id);
+    const allLinks = state.links.filter(l => l.categoryId === cat.id);
+    const links = filterLinks(allLinks, cat);
+
+    if (searchQuery && links.length === 0) return;
+    anyRendered = true;
+
+    const isCollapsed = collapsedCategories.has(cat.id);
 
     const section = document.createElement('section');
-    section.className = 'category-section';
+    section.className = 'category-section' + (isCollapsed ? ' collapsed' : '');
+
+    const isAdmin = role === 'admin';
+    const isFirst = index === 0;
+    const isLast = index === state.categories.length - 1;
 
     section.innerHTML = `
       <div class="category-header">
         <div class="category-title-wrap">
+          <button class="category-collapse-btn ${isCollapsed ? 'collapsed' : ''}" data-cat="${cat.id}" aria-label="Toggle category">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M6 9l6 6 6-6"/></svg>
+          </button>
           <div class="category-swatch" style="background:${color}"></div>
           <div class="category-title">${escapeHtml(cat.name)}</div>
-          <div class="category-count">${links.length}</div>
+          <div class="category-count">${links.length}${searchQuery ? ' / ' + allLinks.length : ''}</div>
         </div>
-        <div class="category-header-actions admin-only ${role === 'admin' ? '' : 'hidden'}">
+        <div class="category-header-actions admin-only ${isAdmin ? '' : 'hidden'}">
+          <div class="category-order-btns">
+            <button class="order-btn move-up-btn" data-cat="${cat.id}" ${isFirst ? 'disabled' : ''} aria-label="Move up">▲</button>
+            <button class="order-btn move-down-btn" data-cat="${cat.id}" ${isLast ? 'disabled' : ''} aria-label="Move down">▼</button>
+          </div>
           <button class="icon-btn add-link-btn" data-cat="${cat.id}">+ Add Link</button>
           <button class="icon-btn rename-cat-btn" data-cat="${cat.id}">Rename</button>
           <button class="icon-btn danger delete-cat-btn" data-cat="${cat.id}">Delete</button>
@@ -181,12 +258,22 @@ function render() {
 
     const grid = section.querySelector(`#grid-${CSS.escape(cat.id)}`);
     if (links.length === 0) {
-      grid.innerHTML = '<div class="empty-category">No links logged in this category.</div>';
+      grid.innerHTML = `<div class="empty-category">${searchQuery ? 'No matches in this category.' : 'No links yet in this category.'}</div>`;
     } else {
       links.forEach(link => grid.appendChild(renderLinkCard(link, color)));
     }
   });
 
+  if (searchQuery && !anyRendered) {
+    noResultsState.classList.remove('hidden');
+  }
+
+  document.querySelectorAll('.category-collapse-btn').forEach(btn =>
+    btn.addEventListener('click', () => toggleCollapse(btn.dataset.cat)));
+  document.querySelectorAll('.move-up-btn').forEach(btn =>
+    btn.addEventListener('click', () => moveCategory(btn.dataset.cat, -1)));
+  document.querySelectorAll('.move-down-btn').forEach(btn =>
+    btn.addEventListener('click', () => moveCategory(btn.dataset.cat, 1)));
   document.querySelectorAll('.add-link-btn').forEach(btn =>
     btn.addEventListener('click', () => openLinkModal(null, btn.dataset.cat)));
   document.querySelectorAll('.rename-cat-btn').forEach(btn =>
@@ -195,9 +282,20 @@ function render() {
     btn.addEventListener('click', () => confirmDeleteCategory(btn.dataset.cat)));
 }
 
+function filterLinks(links, cat) {
+  if (!searchQuery) return links;
+  const catMatches = cat.name.toLowerCase().includes(searchQuery);
+  if (catMatches) return links;
+  return links.filter(l =>
+    l.title.toLowerCase().includes(searchQuery) ||
+    (l.status || '').toLowerCase().includes(searchQuery)
+  );
+}
+
 function renderLinkCard(link, color) {
   const card = document.createElement('div');
-  card.className = 'link-card';
+  const isSelected = selectedLinkIds.has(link.id);
+  card.className = 'link-card' + (selectMode ? ' selectable' : '') + (isSelected ? ' selected' : '');
   if (color) card.style.setProperty('--card-accent', color);
 
   const statusClass = statusClassFor(link.status);
@@ -209,7 +307,11 @@ function renderLinkCard(link, color) {
     ? `<div class="link-meta">Added ${formatDate(link.dateAdded)}</div>`
     : '';
 
-  const adminActions = role === 'admin'
+  const checkboxHtml = (selectMode && role === 'admin')
+    ? `<div class="link-card-checkbox">${isSelected ? '✓' : ''}</div>`
+    : '';
+
+  const adminActions = (role === 'admin' && !selectMode)
     ? `<div class="link-card-admin-actions">
          <button class="icon-btn edit-link-btn" data-id="${link.id}">Edit</button>
          <button class="icon-btn danger delete-link-btn" data-id="${link.id}">Delete</button>
@@ -217,16 +319,19 @@ function renderLinkCard(link, color) {
     : '';
 
   card.innerHTML = `
+    ${checkboxHtml}
     <div class="link-title">${escapeHtml(link.title)}</div>
     ${statusHtml}
     ${dateHtml}
     <div class="link-card-footer">
-      <a class="btn btn-small btn-open" href="${escapeAttr(link.url)}" target="_blank" rel="noopener noreferrer">Open ↗</a>
+      <a class="btn btn-small btn-open" href="${escapeAttr(link.url)}" target="_blank" rel="noopener noreferrer" ${selectMode ? 'onclick="event.stopPropagation()"' : ''}>Open ↗</a>
       ${adminActions}
     </div>
   `;
 
-  if (role === 'admin') {
+  if (selectMode && role === 'admin') {
+    card.addEventListener('click', () => toggleLinkSelection(link.id));
+  } else if (role === 'admin') {
     card.querySelector('.edit-link-btn').addEventListener('click', () => openLinkModal(link.id));
     card.querySelector('.delete-link-btn').addEventListener('click', () => confirmDeleteLink(link.id, link.title));
   }
@@ -245,11 +350,118 @@ function statusClassFor(status) {
   return 'neutral';
 }
 
+// ---------- Category collapse / reorder ----------
+function toggleCollapse(catId) {
+  if (collapsedCategories.has(catId)) {
+    collapsedCategories.delete(catId);
+  } else {
+    collapsedCategories.add(catId);
+  }
+  saveCollapsedToStorage();
+  render();
+}
+
+function loadCollapsedFromStorage() {
+  try {
+    return JSON.parse(localStorage.getItem('reportLinksCollapsed') || '[]');
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveCollapsedToStorage() {
+  try {
+    localStorage.setItem('reportLinksCollapsed', JSON.stringify([...collapsedCategories]));
+  } catch (e) { /* storage unavailable, ignore */ }
+}
+
+async function moveCategory(catId, direction) {
+  if (role !== 'admin') return;
+  const ids = state.categories.map(c => c.id);
+  const idx = ids.indexOf(catId);
+  const swapIdx = idx + direction;
+  if (swapIdx < 0 || swapIdx >= ids.length) return;
+
+  [ids[idx], ids[swapIdx]] = [ids[swapIdx], ids[idx]];
+
+  // Reflect locally right away so the UI feels instant, then persist.
+  const reordered = ids.map(id => state.categories.find(c => c.id === id));
+  state.categories = reordered;
+  render();
+
+  try {
+    await apiPost('reorderCategories', { order: ids });
+  } catch (err) {
+    alert('Error saving new order: ' + err.message);
+    await loadData();
+  }
+}
+
+// ---------- Bulk select ----------
+function toggleLinkSelection(id) {
+  if (selectedLinkIds.has(id)) {
+    selectedLinkIds.delete(id);
+  } else {
+    selectedLinkIds.add(id);
+  }
+  render();
+}
+
+function updateBulkToolbar() {
+  bulkCount.textContent = `${selectedLinkIds.size} selected`;
+  bulkMoveSelect.innerHTML = '<option value="">Move to…</option>' +
+    state.categories.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
+  const hasSelection = selectedLinkIds.size > 0;
+  bulkMoveBtn.disabled = !hasSelection;
+  bulkDeleteBtn.disabled = !hasSelection;
+}
+
+async function handleBulkMove() {
+  const targetCategoryId = bulkMoveSelect.value;
+  if (!targetCategoryId || selectedLinkIds.size === 0) return;
+  const ids = [...selectedLinkIds];
+  try {
+    await Promise.all(ids.map(id => apiPost('updateLink', { id, categoryId: targetCategoryId })));
+    selectMode = false;
+    selectedLinkIds.clear();
+    await loadData();
+  } catch (err) {
+    alert('Error moving links: ' + err.message);
+    await loadData();
+  }
+}
+
+async function handleBulkDelete() {
+  if (selectedLinkIds.size === 0) return;
+  const count = selectedLinkIds.size;
+  confirmMessage.textContent = `Delete ${count} selected link(s)? This cannot be undone.`;
+  pendingDeleteAction = async () => {
+    const ids = [...selectedLinkIds];
+    try {
+      await Promise.all(ids.map(id => apiPost('deleteLink', { id })));
+      selectMode = false;
+      selectedLinkIds.clear();
+      await loadData();
+    } catch (err) {
+      alert('Error deleting links: ' + err.message);
+      await loadData();
+    }
+  };
+  confirmModal.classList.remove('hidden');
+}
+
 // ---------- Link Modal ----------
 function openLinkModal(linkId, defaultCategoryId) {
   if (role !== 'admin') return;
+
+  if (!linkId && state.categories.length === 0) {
+    alert('Create a category first, then add links to it.');
+    return;
+  }
+
   editingLinkId = linkId;
   linkForm.reset();
+  urlWarning.classList.add('hidden');
 
   linkCategorySelect.innerHTML = state.categories
     .map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`)
@@ -282,11 +494,40 @@ function openLinkModal(linkId, defaultCategoryId) {
   }
 
   linkModal.classList.remove('hidden');
+  linkTitleInput.focus();
 }
 
 function closeLinkModal() {
   linkModal.classList.add('hidden');
   editingLinkId = null;
+}
+
+function updateUrlWarning() {
+  const url = linkUrlInput.value.trim();
+  if (!url) {
+    urlWarning.classList.add('hidden');
+    return;
+  }
+
+  const duplicate = state.links.find(l =>
+    l.url.trim().toLowerCase() === url.toLowerCase() && l.id !== editingLinkId
+  );
+  if (duplicate) {
+    const cat = state.categories.find(c => c.id === duplicate.categoryId);
+    urlWarning.textContent = `Already used by "${duplicate.title}"${cat ? ' in ' + cat.name : ''}. You can still save if that's intentional.`;
+    urlWarning.classList.remove('hidden');
+    urlWarning.classList.add('danger');
+    return;
+  }
+  urlWarning.classList.remove('danger');
+
+  if (!GOOGLE_SHEETS_PATTERN.test(url)) {
+    urlWarning.textContent = "This doesn't look like a Google Sheets link — double check before saving.";
+    urlWarning.classList.remove('hidden');
+    return;
+  }
+
+  urlWarning.classList.add('hidden');
 }
 
 async function handleLinkFormSubmit(e) {
