@@ -39,6 +39,29 @@
     </div>
   </header>
 
+  <div class="filter-bar">
+    <div class="filter-bar-inner">
+      <div class="search-wrap">
+        <svg class="search-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        <input type="text" id="searchInput" placeholder="Search links by title or status…" autocomplete="off" />
+        <button id="searchClearBtn" class="search-clear hidden" type="button" aria-label="Clear search">×</button>
+      </div>
+      <button id="selectModeBtn" class="btn btn-secondary btn-small admin-only hidden">Select</button>
+    </div>
+  </div>
+
+  <div id="bulkToolbar" class="bulk-toolbar hidden">
+    <div class="bulk-toolbar-inner">
+      <span id="bulkCount" class="bulk-count">0 selected</span>
+      <select id="bulkMoveSelect">
+        <option value="">Move to…</option>
+      </select>
+      <button id="bulkMoveBtn" class="btn btn-secondary btn-small">Move</button>
+      <button id="bulkDeleteBtn" class="btn btn-danger btn-small">Delete</button>
+      <button id="bulkCancelBtn" class="btn btn-secondary btn-small">Cancel</button>
+    </div>
+  </div>
+
   <main id="app">
     <div id="loadingState" class="state-msg">
       <div class="spinner"></div>
@@ -51,6 +74,7 @@
       </div>
       No categories logged yet.
     </div>
+    <div id="noResultsState" class="state-msg hidden">No links match your search.</div>
     <div id="categoriesContainer" class="categories-container"></div>
   </main>
 
@@ -64,6 +88,7 @@
 
         <label>Google Sheet URL</label>
         <input type="url" id="linkUrlInput" placeholder="https://docs.google.com/spreadsheets/..." required />
+        <p id="urlWarning" class="field-warning hidden"></p>
 
         <label>Category</label>
         <select id="linkCategorySelect" required></select>
